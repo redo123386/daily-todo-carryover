@@ -1,0 +1,28 @@
+{
+	"manifestVersion": 1,
+	"id": "daily-todo-carryover",
+	"name": "Daily Todo Carryover",
+	"author": "Karim Awad",
+	"repoUrl": "https://github.com/redo123386/daily-todo-carryover",
+	"version": {
+		"major": 1,
+		"minor": 0,
+		"patch": 0
+	},
+	"theme": [],
+	"enableOnMobile": true,
+	"description": "✅ Moves unfinished todos into today's Daily Document automatically, once a day.",
+	"unlisted": true,
+	"requestNative": false,
+	"requiredScopes": [
+		{
+			"type": "All",
+			"level": "ReadCreateModify"
+		},
+		{
+			"type": "Powerup",
+			"powerupCode": "rolled",
+			"level": "ReadCreateModifyDelete"
+		}
+	]
+}
