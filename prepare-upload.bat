@@ -14,7 +14,7 @@ if errorlevel 1 (pause & exit /b 1)
 if not exist node_modules\webpack\bin\webpack.js (
   echo.
   echo Installing build tools - first time only...
-  call npm install --no-audit --no-fund --loglevel=error
+  call npm install --no-audit --no-fund --ignore-scripts --loglevel=error
 )
 if not exist node_modules\webpack\bin\webpack.js (
   echo.

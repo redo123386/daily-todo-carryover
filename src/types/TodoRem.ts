@@ -7,6 +7,8 @@ export interface TodoRem {
 	dailyDocument?: Rem;
 	/** That daily document's timestamp in seconds. */
 	timestamp?: number;
+	/** A plain bullet that should be turned into a todo when it is carried over. */
+	convertToTodo?: boolean;
 }
 export interface TodoRems {
 	[date: string]: TodoRem[];

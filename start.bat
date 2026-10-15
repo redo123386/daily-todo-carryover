@@ -22,7 +22,7 @@ echo Node.js %NODE_VER% found.
 echo.
 
 echo [1/3] Checking dependencies...
-call npm install --no-audit --no-fund --loglevel=error
+call npm install --no-audit --no-fund --ignore-scripts --loglevel=error
 if errorlevel 1 (
     echo.
     echo [ERROR] npm install failed. Check your internet connection and try again.

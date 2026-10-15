@@ -1,7 +1,7 @@
 import { BuiltInPowerupCodes, ReactRNPlugin, Rem } from '@remnote/plugin-sdk';
 import { TodoRems } from '../types/TodoRem';
 import { hasHappened, howLongAgo, isFinishedTodo, isUnfinishedTodo } from './calculations';
-import { moveUnderDateHeadings } from './moveMode';
+import { moveUnderDateHeadings, richTextToString } from './moveMode';
 
 async function acceptTodoRem(
 	dailyDocument: Rem,
@@ -96,10 +96,49 @@ async function processRem(
 		}
 	}
 }
+/**
+ * Plain bullets (e.g. "Rebook Dermatology") are treated as todos: picked up,
+ * turned into todos and carried over. Walks the whole day, mirroring the todo
+ * rules: doesn't look inside todos (they're handled as todos), skips anything
+ * tagged Do Not Rollover, and leaves empty lines alone. A plain bullet with
+ * items under it acts as a heading; its items are carried under it.
+ */
+async function collectPlainBullets(
+	plugin: ReactRNPlugin,
+	parent: Rem,
+	dailyDocument: Rem,
+	todoRems: TodoRems,
+	timestamp: string,
+	depth = 0
+) {
+	if (depth > 20) return;
+	if (depth === 0 && !hasHappened(new Date(Number(timestamp) * 1000))) return;
+	for (const childId of parent.children ?? []) {
+		const rem = await plugin.rem.findOne(childId);
+		if (!rem) continue;
+		if (await rem.isTodo()) continue;
+		if (await rem.hasPowerup('doNotRollover')) continue;
+		if ((rem.children ?? []).length > 0) {
+			await collectPlainBullets(plugin, rem, dailyDocument, todoRems, timestamp, depth + 1);
+			continue;
+		}
+		if (!richTextToString(rem.text)) continue;
+		if (await rem.hasPowerup('rolled')) continue;
+		if (await rem.hasPowerup(BuiltInPowerupCodes.DailyDocument)) continue;
+		(todoRems[timestamp] ??= []).push({
+			rem,
+			rememberedParent: parent,
+			dailyDocument,
+			timestamp: Number(timestamp),
+			convertToTodo: true,
+		});
+	}
+}
+
 export async function handleUnfinishedTodos(
 	plugin: ReactRNPlugin,
 	todayDailyDocument: Rem,
-	opts: { quiet?: boolean } = {}
+	opts: { quiet?: boolean; carryPlain?: boolean } = {}
 ) {
 	let parentRemsAlreadyRolledOver: Rem[] = [];
 	let dateLimit: number = await plugin.settings.getSetting('dateLimit');
@@ -130,6 +169,9 @@ export async function handleUnfinishedTodos(
 			continue;
 		}
 		await processRem(plugin, dailyDocument._id, todoRems, dailyDocument);
+		if (opts.carryPlain) {
+			await collectPlainBullets(plugin, dailyDocument, dailyDocument, todoRems, String(timeStampValue));
+		}
 	}
 
 	const omniRem = await plugin.powerup.getPowerupByCode('omniRollover');
@@ -164,6 +206,25 @@ export async function handleUnfinishedTodos(
 		return todoRems;
 	}
 
+	// Turn picked-up plain bullets into unchecked todos before carrying them over.
+	let converted = 0;
+	for (const list of Object.values(todoRems)) {
+		for (const item of list) {
+			if (!item.convertToTodo) continue;
+			try {
+				const rem: any = item.rem;
+				if (typeof rem.setIsTodo === 'function') await rem.setIsTodo(true);
+				if (typeof rem.setTodoStatus === 'function') await rem.setTodoStatus('Unfinished');
+				converted++;
+			} catch (error) {
+				console.warn('[DailyTodoCarryover] Could not turn a bullet into a todo.', error);
+			}
+		}
+	}
+	const convertedNote = converted
+		? ` (${converted} bullet${converted === 1 ? '' : 's'} turned into todo${converted === 1 ? '' : 's'})`
+		: '';
+
 	if (!portalMode) {
 		const { omni, ...dated } = todoRems;
 		if (omni?.length) {
@@ -172,7 +233,7 @@ export async function handleUnfinishedTodos(
 		const items = Object.values(dated).flat();
 		if (!items.length) return todoRems;
 		const { moved, failed } = await moveUnderDateHeadings(plugin, items, todayDailyDocument);
-		let message = `Moved ${moved} unfinished todo${moved === 1 ? '' : 's'} into today's Daily Document.`;
+		let message = `Moved ${moved} unfinished todo${moved === 1 ? '' : 's'} into today's Daily Document${convertedNote}.`;
 		if (failed.length) {
 			message += ` Couldn't move ${failed.length}: ${failed.map((t) => `"${t}"`).join(', ')}.`;
 			console.error('[DailyTodoCarryover] Todos that could not be moved:', failed);
@@ -181,7 +242,7 @@ export async function handleUnfinishedTodos(
 		return todoRems;
 	}
 
-	await plugin.app.toast("Moving unfinished todos to today's Daily Document.");
+	await plugin.app.toast(`Moving unfinished todos to today's Daily Document${convertedNote}.`);
 	for (const dateString in todoRems) {
 		// dateString can also be 'omni'
 		if (

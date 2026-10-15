@@ -64,20 +64,20 @@ async function placementFor(plugin: ReactRNPlugin, item: TodoRem) {
 	// Directly in a Daily Document: group under that day's name.
 	if (!parent || (await isDailyDoc(parent))) {
 		const doc = parent ?? fallbackDoc;
-		return { labelRt: doc?.text ?? [], subRt: undefined as any[] | undefined };
+		return { labelRt: doc?.text ?? [], subRt: undefined as any[] | undefined, sourceHeadingId: undefined as string | undefined };
 	}
 
 	// Inside one of our own bullets from a previous rollover: keep the original date.
 	if (await isRolledWrapper(parent)) {
 		const grandparent = await parentOf(plugin, parent);
 		if (await isRolledWrapper(grandparent)) {
-			return { labelRt: grandparent!.text ?? [], subRt: parent.text ?? [] };
+			return { labelRt: grandparent!.text ?? [], subRt: parent.text ?? [], sourceHeadingId: undefined };
 		}
-		return { labelRt: parent.text ?? [], subRt: undefined };
+		return { labelRt: parent.text ?? [], subRt: undefined, sourceHeadingId: undefined };
 	}
 
 	// Under a normal heading (e.g. "Work") in a Daily Document: date bullet + heading sub-bullet.
-	return { labelRt: fallbackDoc?.text ?? [], subRt: parent.text ?? [] };
+	return { labelRt: fallbackDoc?.text ?? [], subRt: parent.text ?? [], sourceHeadingId: parent._id };
 }
 
 /** Find a bullet we created earlier under `parent` with the same text, or create one. */
@@ -163,8 +163,10 @@ export async function moveUnderDateHeadings(
 ): Promise<MoveResult> {
 	const groups = new Map<string, Group>();
 
+	const sourceHeadings = new Set<string>();
 	for (const item of items) {
-		const { labelRt, subRt } = await placementFor(plugin, item);
+		const { labelRt, subRt, sourceHeadingId } = await placementFor(plugin, item);
+		if (sourceHeadingId) sourceHeadings.add(sourceHeadingId);
 		const label = richTextToString(labelRt) || 'Rolled over';
 		let group = groups.get(label);
 		if (!group) {
@@ -217,6 +219,16 @@ export async function moveUnderDateHeadings(
 			}
 			await appendTo(plugin, subCreated.wrapper._id, sub.rems, result);
 		}
+	}
+	// The heading was recreated under today's date bullet; remove the now-empty original
+	// so it isn't mistaken for a bullet to carry over next time.
+	for (const headingId of sourceHeadings) {
+		const heading = await plugin.rem.findOne(headingId);
+		if (!heading || (heading.children ?? []).length > 0) continue;
+		if (await heading.isTodo()) continue;
+		if (await isDailyDoc(heading)) continue;
+		if (await isRolledWrapper(heading)) continue;
+		await heading.remove();
 	}
 	return result;
 }

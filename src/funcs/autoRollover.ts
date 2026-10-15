@@ -108,7 +108,8 @@ export async function runRollover(
 		}
 
 		await cleanupPastDocuments(plugin);
-		await handleUnfinishedTodos(plugin, todaysDoc, { quiet: opts.quiet });
+		const carryPlain = (await plugin.settings.getSetting('carry-plain-bullets')) !== false;
+		await handleUnfinishedTodos(plugin, todaysDoc, { quiet: opts.quiet, carryPlain });
 		await cleanupPastDocuments(plugin); // remove date bullets emptied by this move
 		await plugin.storage.setSynced(LAST_ROLLOVER_KEY, Date.now());
 		diagnostics.lastCheckResult = 'rolled over';

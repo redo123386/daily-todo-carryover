@@ -15,7 +15,7 @@ type Finding = { day: string; daysAgo: number; text: string; status: string };
 async function walk(
 	plugin: ReactRNPlugin,
 	remId: string,
-	ctx: { day: string; daysAgo: number; beyondLimit: boolean; blockedBy?: string; parent?: Rem },
+	ctx: { day: string; daysAgo: number; beyondLimit: boolean; carryPlain: boolean; blockedBy?: string; parent?: Rem },
 	out: Finding[],
 	depth = 0
 ) {
@@ -36,6 +36,20 @@ async function walk(
 		childBlockedBy = childBlockedBy ?? 'moves together with its parent todo';
 	} else if (await isFinishedTodo(rem)) {
 		childBlockedBy = childBlockedBy ?? 'SKIPPED: it sits under a checked-off (finished) todo';
+	} else if (
+		(rem.children ?? []).length === 0 &&
+		richTextToString(rem.text) &&
+		!(await rem.hasPowerup('rolled'))
+	) {
+		let status: string;
+		if (ctx.blockedBy) status = ctx.blockedBy;
+		else if (!ctx.carryPlain) status = 'SKIPPED: plain bullet (Carry Over Plain Bullets is off)';
+		else if (ctx.beyondLimit) status = 'SKIPPED: older than the Date Limit setting';
+		else if (await rem.hasPowerup('doNotRollover')) status = 'SKIPPED: tagged Do Not Rollover';
+		else status = 'will move (plain bullet, becomes a todo)';
+		out.push({ day: ctx.day, daysAgo: ctx.daysAgo, text: richTextToString(rem.text), status });
+	} else if (await rem.hasPowerup('doNotRollover')) {
+		childBlockedBy = childBlockedBy ?? 'SKIPPED: its parent is tagged Do Not Rollover';
 	}
 
 	for (const childId of rem.children ?? []) {
@@ -45,6 +59,7 @@ async function walk(
 
 export async function diagnose(plugin: ReactRNPlugin): Promise<string> {
 	const dateLimit = Number(await plugin.settings.getSetting('dateLimit')) || 7;
+	const carryPlain = (await plugin.settings.getSetting('carry-plain-bullets')) !== false;
 	const dailyPowerup = await plugin.powerup.getPowerupByCode(BuiltInPowerupCodes.DailyDocument);
 	const docs = (await dailyPowerup?.taggedRem()) ?? [];
 
@@ -63,7 +78,7 @@ export async function diagnose(plugin: ReactRNPlugin): Promise<string> {
 			await walk(
 				plugin,
 				childId,
-				{ day, daysAgo, beyondLimit: daysAgo > dateLimit, parent: doc },
+				{ day, daysAgo, beyondLimit: daysAgo > dateLimit, carryPlain, parent: doc },
 				findings
 			);
 		}
@@ -75,7 +90,7 @@ export async function diagnose(plugin: ReactRNPlugin): Promise<string> {
 	if (!findings.length) {
 		return `Diagnose: no unfinished todos found in the past ${SCAN_DAYS} days (${scannedDocs} past Daily Documents scanned). If you can see one, it may be a reference or portal to a todo that lives in another document.`;
 	}
-	const willMove = findings.filter((f) => f.status === 'will move').length;
+	const willMove = findings.filter((f) => f.status.startsWith('will move')).length;
 	const lines = findings.map((f) => `• ${f.day}: "${f.text}" → ${f.status}`);
-	return `Diagnose (${scannedDocs} past days scanned, Date Limit ${dateLimit}): ${findings.length} unfinished todo(s), ${willMove} will move.\n${lines.join('\n')}`;
+	return `Diagnose (${scannedDocs} past days scanned, Date Limit ${dateLimit}): ${findings.length} item(s), ${willMove} will move.\n${lines.join('\n')}`;
 }

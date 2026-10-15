@@ -112,6 +112,16 @@ async function onActivate(plugin: ReactRNPlugin) {
 		})
 	);
 
+	await safe('carry-plain-bullets setting', () =>
+		plugin.settings.registerBooleanSetting({
+			id: 'carry-plain-bullets',
+			title: 'Carry Over Plain Bullets as Todos',
+			description:
+				'Treat plain bullets in past days as todos: they are turned into todos and carried over too. Empty lines and anything tagged Do Not Rollover are left alone.',
+			defaultValue: true,
+		})
+	);
+
 	await safe('portal-mode setting', () =>
 		plugin.settings.registerBooleanSetting({
 			id: 'portal-mode',
